@@ -9,7 +9,7 @@ export default function UploadPage() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // ---- Function: Run AI Analysis ----
+  // ---- Run AI Analysis ----
   async function handleAnalyze(e) {
     e.preventDefault();
     if (!transcript.trim()) return alert("Please paste your transcript");
@@ -28,49 +28,68 @@ export default function UploadPage() {
     setResult(json);
   }
 
-  // ---- Function: Download Report as PDF ----
+  // ---- Download PDF ----
   function handleDownloadPDF() {
     if (!result) return;
 
-    const doc = new jsPDF();
-    let y = 20;
+    const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+    const marginX = 40;
+    let y = 60;
 
+    // --- Header ---
+    doc.setFillColor(0, 0, 0);
+    doc.rect(0, 0, 595, 60, "F");
+    doc.setTextColor(255, 255, 255);
     doc.setFontSize(18);
-    doc.text("ShowPro AI Performance Report", 20, y);
-    y += 10;
+    doc.text("ShowPro AI Performance Report", marginX, 38);
 
-    doc.setFontSize(12);
-    doc.text(`Energy: ${result.energy_score}`, 20, (y += 10));
-    doc.text(`Clarity: ${result.clarity_score}`, 20, (y += 8));
-    doc.text(`Sales Skill: ${result.sales_score}`, 20, (y += 8));
-    if (result.sales_per_min)
-      doc.text(`Sales/min: ${result.sales_per_min}`, 20, (y += 8));
+    doc.setFontSize(10);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 400, 38);
 
-    y += 10;
+    // --- Body ---
+    doc.setTextColor(0, 0, 0);
     doc.setFontSize(14);
-    doc.text("Summary", 20, y);
-    doc.setFontSize(11);
-    const splitSummary = doc.splitTextToSize(result.analysis_summary, 170);
-    doc.text(splitSummary, 20, (y += 8));
+    doc.text("Overview", marginX, (y += 30));
+    doc.setFontSize(12);
+    doc.text(`Energy: ${result.energy_score}`, marginX, (y += 20));
+    doc.text(`Clarity: ${result.clarity_score}`, marginX, (y += 16));
+    doc.text(`Sales Skill: ${result.sales_score}`, marginX, (y += 16));
+    if (result.sales_per_min)
+      doc.text(`Sales/min: ${result.sales_per_min}`, marginX, (y += 16));
 
+    // --- Summary ---
+    doc.setFontSize(14);
+    doc.text("Summary", marginX, (y += 30));
+    doc.setFontSize(11);
+    const wrappedSummary = doc.splitTextToSize(result.analysis_summary, 500);
+    doc.text(wrappedSummary, marginX, (y += 16));
+
+    // --- Improvement Actions ---
     if (result.improvement_actions?.length) {
-      y += 10;
       doc.setFontSize(14);
-      doc.text("Improvement Actions", 20, y);
+      doc.text("Improvement Actions", marginX, (y += 30));
       doc.setFontSize(11);
       result.improvement_actions.forEach((a) => {
-        y += 8;
-        doc.text(`• ${a.title}: ${a.detail}`, 20, y);
+        y += 14;
+        doc.text(`• ${a.title}: ${a.detail}`, marginX, y);
       });
     }
 
-    doc.save("ShowProAI_Report.pdf");
+    // --- Footer ---
+    doc.setFontSize(10);
+    doc.setTextColor(150, 150, 150);
+    doc.text("Powered by ShowPro AI", marginX, 810);
+
+    doc.save(`ShowProAI_Report_${new Date().toISOString().slice(0, 10)}.pdf`);
   }
 
   return (
     <main style={{ maxWidth: 700, margin: "2rem auto", padding: 20 }}>
       <h1>Analyze Your Show</h1>
-      <p>Paste your transcript below for instant AI feedback and a downloadable report.</p>
+      <p>
+        Paste your transcript below for instant AI feedback and a downloadable
+        branded report.
+      </p>
 
       <form onSubmit={handleAnalyze}>
         <textarea
@@ -241,4 +260,3 @@ export default function UploadPage() {
     </main>
   );
 }
-
