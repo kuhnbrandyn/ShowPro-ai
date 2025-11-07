@@ -1,19 +1,26 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import ffmpeg from "fluent-ffmpeg";
-import ffmpegPath from "ffmpeg-static";
+import ffmpegStatic from "ffmpeg-static";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 300; // allow up to 5 min processing
+export const maxDuration = 300; // 5 minutes
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
 });
 
-ffmpeg.setFfmpegPath(ffmpegPath!);
+// 🧩 Ensure ffmpeg-static path is resolved correctly
+if (!ffmpegStatic) {
+  console.error("❌ ffmpeg-static not found!");
+} else {
+  ffmpeg.setFfmpegPath(ffmpegStatic);
+  console.log("✅ ffmpeg path set:", ffmpegStatic);
+}
 
 export async function POST(req: Request) {
   console.log("✅ /api/upload-video route hit");
@@ -29,17 +36,17 @@ export async function POST(req: Request) {
 
     console.log("📦 File received:", file.name, file.size);
 
-    // Save the uploaded file temporarily
+    // Save uploaded video temporarily
     const buffer = Buffer.from(await file.arrayBuffer());
     const tmpDir = "/tmp";
     const videoPath = path.join(tmpDir, file.name);
     fs.writeFileSync(videoPath, buffer);
     console.log("💾 Video written to:", videoPath);
 
-    // Prepare paths
+    // Prepare output path
     const audioPath = path.join(tmpDir, `${file.name}.mp3`);
 
-    // Convert video to audio
+    // 🧠 Convert to audio
     console.log("🎧 Starting ffmpeg conversion...");
     await new Promise<void>((resolve, reject) => {
       ffmpeg(videoPath)
@@ -56,14 +63,11 @@ export async function POST(req: Request) {
         });
     });
 
-    // Check audio file exists
-    console.log("🧩 File exists:", fs.existsSync(audioPath));
-    if (fs.existsSync(audioPath)) {
-      const stats = fs.statSync(audioPath);
-      console.log("🧩 Audio file size:", stats.size);
+    console.log("🧩 Checking audio file...");
+    if (!fs.existsSync(audioPath)) {
+      throw new Error("Audio extraction failed — no output file found.");
     }
 
-    // Transcribe audio
     console.log("🧠 Sending to Whisper for transcription...");
     const transcript = await openai.audio.transcriptions.create({
       file: fs.createReadStream(audioPath),
@@ -92,5 +96,4 @@ export async function POST(req: Request) {
     );
   }
 }
-
 
