@@ -5,17 +5,10 @@ import ffmpegPath from "ffmpeg-static";
 import fs from "fs";
 import path from "path";
 
-// Allow larger uploads (fixes 413 Payload Too Large)
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: "50mb",
-    },
-  },
-};
-
-// Ensure Node runtime for file handling
-export const runtime = "nodejs";
+// ✅ Next.js 14+ way to configure upload limit
+export const maxDuration = 60; // function runtime max time in seconds
+export const runtime = "nodejs"; // required for fs and ffmpeg
+export const dynamic = "force-dynamic"; // ensure it runs at request time
 
 // Initialize OpenAI client
 const openai = new OpenAI({
@@ -26,24 +19,21 @@ ffmpeg.setFfmpegPath(ffmpegPath!);
 
 export async function POST(req: Request) {
   try {
-    // Parse multipart/form-data
+    // Parse multipart form
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
 
     if (!file) {
-      return NextResponse.json(
-        { error: "No file uploaded" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
-    // Write video to a temporary directory
+    // Write video to /tmp (Vercel’s writable temp dir)
     const buffer = Buffer.from(await file.arrayBuffer());
     const tmpDir = "/tmp";
     const videoPath = path.join(tmpDir, file.name);
     fs.writeFileSync(videoPath, buffer);
 
-    // Convert video to audio (mp3) using ffmpeg
+    // Convert video -> audio (.mp3)
     const audioPath = path.join(tmpDir, `${file.name}.mp3`);
     await new Promise<void>((resolve, reject) => {
       ffmpeg(videoPath)
@@ -53,7 +43,7 @@ export async function POST(req: Request) {
         .run();
     });
 
-    // Transcribe audio using OpenAI Whisper
+    // Transcribe audio using Whisper
     const transcript = await openai.audio.transcriptions.create({
       file: fs.createReadStream(audioPath),
       model: "whisper-1",
@@ -64,11 +54,10 @@ export async function POST(req: Request) {
     try {
       fs.unlinkSync(videoPath);
       fs.unlinkSync(audioPath);
-    } catch {
-      // silently ignore cleanup errors
+    } catch (cleanupErr) {
+      console.warn("Cleanup failed:", cleanupErr);
     }
 
-    // Return transcript text
     return NextResponse.json({
       success: true,
       transcript,
@@ -81,3 +70,4 @@ export async function POST(req: Request) {
     );
   }
 }
+
