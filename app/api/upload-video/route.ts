@@ -5,12 +5,10 @@ import ffmpegPath from "ffmpeg-static";
 import fs from "fs";
 import path from "path";
 
-// ✅ Next.js 14+ way to configure upload limit
-export const maxDuration = 60; // function runtime max time in seconds
-export const runtime = "nodejs"; // required for fs and ffmpeg
-export const dynamic = "force-dynamic"; // ensure it runs at request time
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 300; // allow up to 5 min processing
 
-// Initialize OpenAI client
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY!,
 });
@@ -18,56 +16,81 @@ const openai = new OpenAI({
 ffmpeg.setFfmpegPath(ffmpegPath!);
 
 export async function POST(req: Request) {
+  console.log("✅ /api/upload-video route hit");
+
   try {
-    // Parse multipart form
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
 
     if (!file) {
+      console.log("❌ No file uploaded");
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
-    // Write video to /tmp (Vercel’s writable temp dir)
+    console.log("📦 File received:", file.name, file.size);
+
+    // Save the uploaded file temporarily
     const buffer = Buffer.from(await file.arrayBuffer());
     const tmpDir = "/tmp";
     const videoPath = path.join(tmpDir, file.name);
     fs.writeFileSync(videoPath, buffer);
+    console.log("💾 Video written to:", videoPath);
 
-    // Convert video -> audio (.mp3)
+    // Prepare paths
     const audioPath = path.join(tmpDir, `${file.name}.mp3`);
+
+    // Convert video to audio
+    console.log("🎧 Starting ffmpeg conversion...");
     await new Promise<void>((resolve, reject) => {
       ffmpeg(videoPath)
-        .output(audioPath)
-        .on("end", resolve)
-        .on("error", reject)
-        .run();
+        .noVideo()
+        .audioCodec("libmp3lame")
+        .save(audioPath)
+        .on("end", () => {
+          console.log("🎧 Audio extracted successfully:", audioPath);
+          resolve();
+        })
+        .on("error", (err) => {
+          console.error("❌ ffmpeg error:", err);
+          reject(err);
+        });
     });
 
-    // Transcribe audio using Whisper
+    // Check audio file exists
+    console.log("🧩 File exists:", fs.existsSync(audioPath));
+    if (fs.existsSync(audioPath)) {
+      const stats = fs.statSync(audioPath);
+      console.log("🧩 Audio file size:", stats.size);
+    }
+
+    // Transcribe audio
+    console.log("🧠 Sending to Whisper for transcription...");
     const transcript = await openai.audio.transcriptions.create({
       file: fs.createReadStream(audioPath),
       model: "whisper-1",
       response_format: "text",
     });
 
-    // Cleanup temp files
+    console.log("📝 Whisper returned transcript successfully");
+
+    // Cleanup
     try {
       fs.unlinkSync(videoPath);
       fs.unlinkSync(audioPath);
+      console.log("🧹 Temp files cleaned up");
     } catch (cleanupErr) {
-      console.warn("Cleanup failed:", cleanupErr);
+      console.warn("⚠️ Cleanup failed:", cleanupErr);
     }
 
-    return NextResponse.json({
-      success: true,
-      transcript,
-    });
+    console.log("✅ Upload route complete");
+    return NextResponse.json({ success: true, transcript });
   } catch (error: any) {
-    console.error("Upload error:", error);
+    console.error("❌ Upload error:", error);
     return NextResponse.json(
       { error: error.message || "Upload failed" },
       { status: 500 }
     );
   }
 }
+
 
