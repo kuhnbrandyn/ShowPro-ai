@@ -1,8 +1,11 @@
 {
   "functions": {
-    "api/upload-video/route.ts": {
-      "maxDuration": 60,
-      "maxRequestBodySize": "50mb"
+    "api/upload-video": {
+      "runtime": "nodejs20.x",
+      "maxDuration": 60
     }
+  },
+  "limits": {
+    "maxUploadSize": "50mb"
   }
 }
